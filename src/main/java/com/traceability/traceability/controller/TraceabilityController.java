@@ -10,73 +10,109 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import lombok.RequiredArgsConstructor;
-import jakarta.validation.Valid;
-import com.traceability.traceability.entiti.TraceabilityLot;
-import com.traceability.traceability.repository.TraceabilityLotRepository;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.traceability.traceability.DTO.TraceabilityDTO;
+import com.traceability.traceability.entiti.ProductIdentification;
+import com.traceability.traceability.entiti.ProductionInfo;
+import com.traceability.traceability.entiti.ShippingEvent;
+import com.traceability.traceability.entiti.TraceabilityRecord;
+import com.traceability.traceability.repository.ProductIdentificationRepository;
+import com.traceability.traceability.repository.ProductionInfoRepository;
+import com.traceability.traceability.repository.ShippingEventRepository;
+import com.traceability.traceability.repository.TraceabilityRecordRepository;
 import com.traceability.traceability.service.TraceabilityService;
 
+import lombok.RequiredArgsConstructor;
+
 @RestController
-@RequestMapping("/api/lots")
-@CrossOrigin(origins = "http://localhost:3000")
+@RequestMapping("/api/traceability")
 @RequiredArgsConstructor
+@CrossOrigin(origins = "http://localhost:3000")
 public class TraceabilityController {
 
     private final TraceabilityService service;
-    private final TraceabilityLotRepository traceabilitylotrepository ;
- 
+    
+private final TraceabilityRecordRepository recordRepo;
+private final ProductIdentificationRepository productRepo;
+private final ProductionInfoRepository productionRepo;
+private final ShippingEventRepository shippingRepo;
+
     @PostMapping
-    public ResponseEntity<TraceabilityLot> create(@Valid @RequestBody TraceabilityLot lot) {
-        return ResponseEntity.ok(service.createLot(lot));
+    public ResponseEntity<?> create(@RequestBody TraceabilityDTO dto) {
+        return ResponseEntity.ok(service.createRecord(dto));
     }
 
-    @GetMapping("/{lotCode}")
-    public ResponseEntity<TraceabilityLot> get(@PathVariable String lotCode) {
-        return ResponseEntity.ok(service.getByLotCode(lotCode));
-    }
+    @GetMapping("/export/excel")
+public ResponseEntity<byte[]> exportExcel() throws Exception {
 
-    @GetMapping("/export")
-public ResponseEntity<byte[]> exportToExcel() throws Exception {
-
-    List<TraceabilityLot> lots = traceabilitylotrepository.findAll();
+    List<TraceabilityRecord> records = recordRepo.findAll();
 
     Workbook workbook = new XSSFWorkbook();
-    Sheet sheet = workbook.createSheet("Lots");
+    Sheet sheet = workbook.createSheet("Traceability Records");
 
-    // Header
-    String[] columns = {
-            "ID", "Lot Code", "Product Name", "Variety",
-            "Description", "Harvest Date", "Farm Name",
-            "Farm Address", "Quantity", "Unit"
+    String[] headers = {
+            "TLC",
+            "Status",
+            "Created At",
+            "GTIN",
+            "Description",
+            "Quantity",
+            "Unit",
+            "Country",
+            "Production Site",
+            "Harvest Date",
+            "Shipper",
+            "Shipping Date"
     };
 
+    // Header
     Row headerRow = sheet.createRow(0);
-
-    for (int i = 0; i < columns.length; i++) {
-        headerRow.createCell(i).setCellValue(columns[i]);
+    for (int i = 0; i < headers.length; i++) {
+        headerRow.createCell(i).setCellValue(headers[i]);
     }
 
-    // Data
     int rowNum = 1;
-    for (TraceabilityLot lot : lots) {
+
+    for (TraceabilityRecord record : records) {
+
+        ProductIdentification product = productRepo.findByRecord(record);
+        ProductionInfo production = productionRepo.findByRecord(record);
+        ShippingEvent shipping = shippingRepo.findFirstByRecord(record);
 
         Row row = sheet.createRow(rowNum++);
 
-        row.createCell(0).setCellValue(lot.getId() != null ? lot.getId() : 0);
-        row.createCell(1).setCellValue(lot.getLotCode());
-        row.createCell(2).setCellValue(lot.getProductName());
-        row.createCell(3).setCellValue(lot.getVariety());
-        row.createCell(4).setCellValue(lot.getProductDescription());
-        row.createCell(5).setCellValue(lot.getHarvestDate() != null ? lot.getHarvestDate().toString() : "");
-        row.createCell(6).setCellValue(lot.getFarmName());
-        row.createCell(7).setCellValue(lot.getFarmAddress());
-        row.createCell(8).setCellValue(lot.getTotalQuantity() != null ? lot.getTotalQuantity() : 0);
-        row.createCell(9).setCellValue(lot.getUnit());
+        row.createCell(0).setCellValue(record.getTraceabilityLotCode());
+        row.createCell(1).setCellValue(record.getStatus());
+        row.createCell(2).setCellValue(record.getCreatedAt() != null ?
+                record.getCreatedAt().toString() : "");
+
+        row.createCell(3).setCellValue(product != null ? product.getGtin() : "");
+        row.createCell(4).setCellValue(product != null ? product.getDescription() : "");
+        row.createCell(5).setCellValue(product != null && product.getQuantity()!=null ?
+                product.getQuantity() : 0);
+        row.createCell(6).setCellValue(product != null ? product.getUnit() : "");
+
+        row.createCell(7).setCellValue(production != null ?
+                production.getCountryOfOrigin() : "");
+        row.createCell(8).setCellValue(production != null ?
+                production.getProductionSiteName() : "");
+        row.createCell(9).setCellValue(production != null && production.getHarvestDate()!=null ?
+                production.getHarvestDate().toString() : "");
+
+        row.createCell(10).setCellValue(shipping != null ?
+                shipping.getShipperName() : "");
+        row.createCell(11).setCellValue(shipping != null && shipping.getShippingDateTime()!=null ?
+                shipping.getShippingDateTime().toString() : "");
     }
 
-    // Auto-size columns
-    for (int i = 0; i < columns.length; i++) {
+    // Auto size columns
+    for (int i = 0; i < headers.length; i++) {
         sheet.autoSizeColumn(i);
     }
 
@@ -84,10 +120,9 @@ public ResponseEntity<byte[]> exportToExcel() throws Exception {
     workbook.write(outputStream);
     workbook.close();
 
-    String fileName = "lots_" + java.time.LocalDate.now() + ".xlsx";
-
     return ResponseEntity.ok()
-            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + fileName)
+            .header(HttpHeaders.CONTENT_DISPOSITION,
+                    "attachment; filename=traceability.xlsx")
             .contentType(MediaType.parseMediaType(
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
             .body(outputStream.toByteArray());
